@@ -4,25 +4,89 @@ import time
 import hashlib
 import json
 from uuid import uuid4
-"""
-区块的结构： 索引(index)， Unix时间戳(timestamp), 交易列表(transactions), 工作量证明(proof)，
-以及前一个区块的hash值(previous_hash)
-block = {
-    'index': 1,
-    'timestamp': 1506057125.900785,
-    'transactions': [
-        {
-            'sender': "8527147fe1f5426f9dd545de4b27ee00",
-            'recipient': "a77f5cdfa2934df3954a5c7c7da5df1f",
-            'amount': 5,
-        }
-    ],
-    'proof': 324984774000,
-    'previous_hash': "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-}
-"""
+
+import requests
+from flask import Flask,jsonify,request
+
+
+app = Flask(__name__)
+
+#Generate a globally unique address for this node
+node_identifier = str(uuid4()).replace("-", "")
+
+# Instantiate the Blockchain
+blockchain = Blockchain()
+
+@app.route('/mine', methods=['GET'])
+def mine():
+    # We run the proof of work algorithm to get the next proof...
+    last_block = blockchain.last_block
+    last_proof = last_block['proof']
+    proof = blockchain.proof_of_work(last_proof)
+
+    # 给工作量证明的节点提供奖励.
+    # 发送者为 "0" 表明是新挖出的币
+    blockchain.new_transaction(
+        sender="0",
+        recipient=node_identifier,
+        amount=1,
+    )
+
+    # Forge the new Block by adding it to the chain
+    block = blockchain.new_block(proof)
+
+    response = {
+        'message': "New Block Forged",
+        'index': block['index'],
+        'transactions': block['transactions'],
+        'proof': block['proof'],
+        'previous_hash': block['previous_hash'],
+    }
+    return jsonify(response), 200
+
+@app.route("/transactions/new", methods=["POST"])
+def new_transaction():
+    values = request.get_json()
+    #Check that the required fields are in the POST'ed data
+    required = ["sender","recipient", "amount"]
+    if not all(k in values for k in required):
+        return "invalid param", 400
+
+    #Create a new Transaction
+    index = blockchain.new_transaction(values["sender"], values["recipient"], values["amount"])
+    resonse = {"message": f"Transaction will be added to Block {index}"}
+    return jsonify(resonse), 200
+
+@app.route("/chain",methods=["GET"])
+def full_chain():
+    response = {
+        "chain": blockchain.chain,
+        "length": len(blockchain.chain)
+    }
+    return jsonify(response), 200
+
+
+if __name__=="__main__":
+    app.run(host="0.0.0.0",port=5000)
 
 class Blockchain(object):
+    """
+    区块的结构： 索引(index)， Unix时间戳(timestamp), 交易列表(transactions), 工作量证明(proof)，
+    以及前一个区块的hash值(previous_hash)
+    block = {
+        'index': 1,
+        'timestamp': 1506057125.900785,
+        'transactions': [
+            {
+                'sender': "8527147fe1f5426f9dd545de4b27ee00",
+                'recipient': "a77f5cdfa2934df3954a5c7c7da5df1f",
+                'amount': 5,
+            }
+        ],
+        'proof': 324984774000,
+        'previous_hash': "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    }
+    """
 
     def __init__(self):
         self.chain = []
